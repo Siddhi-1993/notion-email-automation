@@ -2,7 +2,7 @@ name: Send Weekly Update Email
 
 on:
   schedule:
-    - cron: '0 17 * * 5'
+    - cron: '0 23 * * 5'
   workflow_dispatch:
 
 jobs:
