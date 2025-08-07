@@ -43,6 +43,9 @@ def get_recent_launches():
                 ]
             }
         )
+        print(f"DEBUG: Recent launches query returned {len(response['results'])} results")
+        if response['results']:
+            print(f"DEBUG: First result: {json.dumps(response['results'][0], indent=2)}")
         return response['results']
     except Exception as e:
         print(f"Error fetching recent launches: {e}")
@@ -89,6 +92,7 @@ def get_upcoming_launches():
                 ]
             }
         )
+        print(f"DEBUG: Upcoming launches query returned {len(response['results'])} results")
         return response['results']
     except Exception as e:
         print(f"Error fetching upcoming launches: {e}")
@@ -124,6 +128,9 @@ def get_bug_fixes():
                 ]
             }
         )
+        print(f"DEBUG: Bug fixes query returned {len(response['results'])} results")
+        if response['results']:
+            print(f"DEBUG: First bug fix result: {json.dumps(response['results'][0], indent=2)}")
         return response['results']
     except Exception as e:
         print(f"Error fetching bug fixes: {e}")
@@ -133,7 +140,7 @@ def extract_release_data(page):
     """Extract data from a Dev Releases page"""
     properties = page['properties']
     
-    # Extract Event Name (title)
+    # Extract Event Name (title) - this is actually a property in Dev Releases
     title = "Untitled"
     if 'Event Name' in properties and properties['Event Name']['title']:
         title = properties['Event Name']['title'][0]['text']['content']
@@ -153,6 +160,8 @@ def extract_release_data(page):
     if 'Status' in properties and properties['Status']['select']:
         status = properties['Status']['select']['name']
     
+    print(f"DEBUG: Extracted release data - Title: {title}, Date: {date}, Status: {status}")
+    
     return {
         'title': title,
         'description': description,
@@ -164,18 +173,22 @@ def extract_task_data(page):
     """Extract data from a Development Tasks page"""
     properties = page['properties']
     
-    # Extract Task Name (assuming it's stored in the title property)
+    # Extract the title - get it directly from the page object
     title = "Untitled"
-    # Check for different possible title property names
-    title_properties = ['Name', 'Title', 'Task', 'Task Name']
-    for prop_name in title_properties:
-        if prop_name in properties and properties[prop_name]['title']:
-            title = properties[prop_name]['title'][0]['text']['content']
-            break
     
-    # If no title found in title properties, get from the page title
-    if title == "Untitled" and 'title' in page:
-        title = page['title'][0]['text']['content'] if page['title'] else "Untitled"
+    # Method 1: Get from page object title (this is where Notion stores the page title)
+    if 'properties' in page:
+        # Look for the title property (the one with type 'title')
+        for prop_name, prop_data in properties.items():
+            if prop_data.get('type') == 'title':
+                if prop_data.get('title') and len(prop_data['title']) > 0:
+                    title = prop_data['title'][0]['text']['content']
+                    break
+    
+    # Method 2: Fallback to page title if properties don't work
+    if title == "Untitled" and 'url' in page:
+        # If we can't get title from properties, we'll use the page ID as reference
+        title = f"Task {page['id'][-8:]}"  # Use last 8 chars of ID
     
     # Extract Description
     description = ""
@@ -191,6 +204,8 @@ def extract_task_data(page):
     priority = ""
     if 'Priority' in properties and properties['Priority']['select']:
         priority = properties['Priority']['select']['name']
+    
+    print(f"DEBUG: Extracted task data - Title: {title}, Date: {date}, Priority: {priority}")
     
     return {
         'title': title,
@@ -210,7 +225,7 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
             <p style="margin: 5px 0 0 0; color: #6c757d;"><strong>Date:</strong> {datetime.now().strftime('%B %d, %Y')}</p>
         </div>
         
-        <h2 style="color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 5px;">🚀 Recent Launches</h2>
+        <h2 style="color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 5px;">🚀 Recent Launches ({len(recent_launches)} items)</h2>
         """
     
     if recent_launches:
@@ -238,8 +253,8 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
     else:
         html_content += "<p style='color: #6c757d; font-style: italic; background-color: #f8f9fa; padding: 15px; border-radius: 5px;'>No launches completed this week.</p>"
     
-    html_content += """
-        <h2 style="color: #fd7e14; border-bottom: 2px solid #fd7e14; padding-bottom: 5px;">📅 Upcoming Launches</h2>
+    html_content += f"""
+        <h2 style="color: #fd7e14; border-bottom: 2px solid #fd7e14; padding-bottom: 5px;">📅 Upcoming Launches ({len(upcoming_launches)} items)</h2>
         """
     
     if upcoming_launches:
@@ -267,8 +282,8 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
     else:
         html_content += "<p style='color: #6c757d; font-style: italic; background-color: #f8f9fa; padding: 15px; border-radius: 5px;'>No upcoming launches in the next 2 weeks.</p>"
     
-    html_content += """
-        <h2 style="color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 5px;">🐛 Bug Fixes</h2>
+    html_content += f"""
+        <h2 style="color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 5px;">🐛 Bug Fixes ({len(bug_fixes)} items)</h2>
         """
     
     if bug_fixes:
@@ -349,6 +364,8 @@ def send_email(content):
 def main():
     """Main function to orchestrate the email automation"""
     print("Starting weekly email automation...")
+    print(f"Current date/time: {datetime.now().isoformat()}")
+    print(f"Looking for items after: {(datetime.now() - timedelta(days=7)).isoformat()}")
     
     try:
         print("Fetching recent launches from Dev Releases...")
