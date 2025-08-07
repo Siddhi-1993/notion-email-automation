@@ -30,7 +30,7 @@ def get_recent_launches():
                 "and": [
                     {
                         "property": "Status",
-                        "select": {
+                        "status": {
                             "equals": "Completed"
                         }
                     },
@@ -65,13 +65,13 @@ def get_upcoming_launches():
                         "or": [
                             {
                                 "property": "Status",
-                                "select": {
+                                "status": {
                                     "equals": "Upcoming"
                                 }
                             },
                             {
                                 "property": "Status",
-                                "select": {
+                                "status": {
                                     "equals": "In Progress"
                                 }
                             }
@@ -115,7 +115,7 @@ def get_bug_fixes():
                     },
                     {
                         "property": "Status",
-                        "select": {
+                        "status": {
                             "equals": "Done"
                         }
                     },
@@ -157,8 +157,8 @@ def extract_release_data(page):
     
     # Extract Status
     status = ""
-    if 'Status' in properties and properties['Status']['select']:
-        status = properties['Status']['select']['name']
+    if 'Status' in properties and properties['Status']['status']:
+        status = properties['Status']['status']['name']
     
     print(f"DEBUG: Extracted release data - Title: {title}, Date: {date}, Status: {status}")
     
