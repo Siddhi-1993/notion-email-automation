@@ -10,7 +10,8 @@ import json
 NOTION_TOKEN = os.getenv('NOTION_TOKEN')
 EMAIL_USER = os.getenv('EMAIL_USER')
 EMAIL_PASS = os.getenv('EMAIL_PASS')
-RECIPIENTS = os.getenv('RECIPIENTS').split(',')  # comma-separated emails
+RECIPIENTS = os.getenv('RECIPIENTS').split(',') if os.getenv('RECIPIENTS') else []  # To: recipients
+CC_RECIPIENTS = os.getenv('CC_RECIPIENTS').split(',') if os.getenv('CC_RECIPIENTS') else []  # CC: recipients
 
 # Database IDs
 DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
@@ -52,9 +53,9 @@ def get_recent_launches():
         return []
 
 def get_upcoming_launches():
-    """Get upcoming launches for next week"""
+    """Get upcoming launches for next 2 weeks"""
     today = datetime.now().isoformat()
-    two_weeks_later = (datetime.now() + timedelta(days=7)).isoformat()
+    two_weeks_later = (datetime.now() + timedelta(days=14)).isoformat()
     
     try:
         response = notion.databases.query(
@@ -353,10 +354,22 @@ def send_email(content):
     msg = MIMEMultipart('alternative')
     msg['Subject'] = f"Weekly Development Release Notes - {datetime.now().strftime('%B %d, %Y')}"
     msg['From'] = EMAIL_USER
-    msg['To'] = ', '.join(RECIPIENTS)
+    
+    # Set To and CC recipients
+    if RECIPIENTS:
+        msg['To'] = ', '.join(RECIPIENTS)
+    if CC_RECIPIENTS:
+        msg['CC'] = ', '.join(CC_RECIPIENTS)
     
     html_part = MIMEText(content, 'html')
     msg.attach(html_part)
+    
+    # Combine all recipients for actual sending
+    all_recipients = []
+    if RECIPIENTS:
+        all_recipients.extend([email.strip() for email in RECIPIENTS])
+    if CC_RECIPIENTS:
+        all_recipients.extend([email.strip() for email in CC_RECIPIENTS])
     
     try:
         # Gmail SMTP configuration (adjust for other providers)
@@ -364,12 +377,15 @@ def send_email(content):
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
         
-        # Send to each recipient
-        for recipient in RECIPIENTS:
-            server.send_message(msg, to_addrs=[recipient.strip()])
+        # Send to all recipients (both To and CC)
+        if all_recipients:
+            server.send_message(msg, to_addrs=all_recipients)
         
         server.quit()
-        print(f"Email sent successfully to {len(RECIPIENTS)} recipients!")
+        print(f"Email sent successfully!")
+        print(f"To: {', '.join(RECIPIENTS) if RECIPIENTS else 'None'}")
+        print(f"CC: {', '.join(CC_RECIPIENTS) if CC_RECIPIENTS else 'None'}")
+        print(f"Total recipients: {len(all_recipients)}")
         
     except Exception as e:
         print(f"Error sending email: {e}")
