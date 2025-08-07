@@ -52,9 +52,9 @@ def get_recent_launches():
         return []
 
 def get_upcoming_launches():
-    """Get upcoming launches for next 2 weeks"""
+    """Get upcoming launches for next week"""
     today = datetime.now().isoformat()
-    two_weeks_later = (datetime.now() + timedelta(days=14)).isoformat()
+    two_weeks_later = (datetime.now() + timedelta(days=7)).isoformat()
     
     try:
         response = notion.databases.query(
