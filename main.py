@@ -250,7 +250,7 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
             if data['date']:
                 try:
                     date_obj = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
-                    formatted_date = date_obj.strftime('%B %d, %Y')
+                    formatted_date = date_obj.strftime('%B %d, %Y at %I:%M %p')
                 except:
                     formatted_date = data['date']
             
@@ -279,7 +279,7 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
             if data['date']:
                 try:
                     date_obj = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
-                    formatted_date = date_obj.strftime('%B %d, %Y')
+                    formatted_date = date_obj.strftime('%B %d, %Y at %I:%M %p')
                 except:
                     formatted_date = data['date']
             
@@ -351,7 +351,7 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
 def send_email(content):
     """Send the formatted email"""
     msg = MIMEMultipart('alternative')
-    msg['Subject'] = f"Weekly Development Update - {datetime.now().strftime('%B %d, %Y')}"
+    msg['Subject'] = f"Weekly Development Release Notes - {datetime.now().strftime('%B %d, %Y')}"
     msg['From'] = EMAIL_USER
     msg['To'] = ', '.join(RECIPIENTS)
     
