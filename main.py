@@ -142,23 +142,37 @@ def extract_release_data(page):
     
     # Extract Event Name (title) - this is actually a property in Dev Releases
     title = "Untitled"
-    if 'Event Name' in properties and properties['Event Name']['title']:
-        title = properties['Event Name']['title'][0]['text']['content']
+    if 'Event Name' in properties and properties['Event Name'].get('title'):
+        try:
+            if len(properties['Event Name']['title']) > 0:
+                title = properties['Event Name']['title'][0]['text']['content']
+        except (KeyError, IndexError, TypeError):
+            title = f"Event {page['id'][-8:]}"
     
     # Extract Description
     description = ""
-    if 'Description' in properties and properties['Description']['rich_text']:
-        description = properties['Description']['rich_text'][0]['text']['content']
+    if 'Description' in properties and properties['Description'].get('rich_text'):
+        try:
+            if len(properties['Description']['rich_text']) > 0:
+                description = properties['Description']['rich_text'][0]['text']['content']
+        except (KeyError, IndexError, TypeError):
+            description = ""
     
     # Extract Date
     date = ""
-    if 'Date' in properties and properties['Date']['date']:
-        date = properties['Date']['date']['start']
+    if 'Date' in properties and properties['Date'].get('date'):
+        try:
+            date = properties['Date']['date']['start']
+        except (KeyError, TypeError):
+            date = ""
     
     # Extract Status
     status = ""
-    if 'Status' in properties and properties['Status']['status']:
-        status = properties['Status']['status']['name']
+    if 'Status' in properties and properties['Status'].get('status'):
+        try:
+            status = properties['Status']['status']['name']
+        except (KeyError, TypeError):
+            status = ""
     
     print(f"DEBUG: Extracted release data - Title: {title}, Date: {date}, Status: {status}")
     
