@@ -2,9 +2,8 @@ name: Send Weekly Update Email
 
 on:
   schedule:
-    # Runs every Friday at 5 PM UTC (adjust timezone as needed)
     - cron: '0 17 * * 5'
-  workflow_dispatch: # This enables the "Run workflow" button
+  workflow_dispatch:
 
 jobs:
   send-email:
