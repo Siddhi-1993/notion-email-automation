@@ -340,7 +340,7 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center;">
             <p style="color: #6c757d; font-size: 14px; margin: 0;">
                 📊 This weekly update was automatically generated from our Notion workspace.<br>
-                For questions or additional details, please reach out to the development team.
+                For questions or additional details, please reach out to the technical project manager or development team.
             </p>
         </div>
     </body>
