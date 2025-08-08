@@ -28,6 +28,7 @@ jobs:
         EMAIL_USER: ${{ secrets.EMAIL_USER }}
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         RECIPIENTS: ${{ secrets.RECIPIENTS }}
+        CC_RECIPIENTS: ${{ secrets.CC_RECIPIENTS }}
         DEV_RELEASES_DB: ${{ secrets.DEV_RELEASES_DB }}
         DEVELOPMENT_TASKS_DB: ${{ secrets.DEVELOPMENT_TASKS_DB }}
       run: python main.py
