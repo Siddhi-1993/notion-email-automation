@@ -31,71 +31,70 @@ def get_recipients_from_releases():
         today = datetime.now().isoformat()
         two_weeks_later = (datetime.now() + timedelta(days=14)).isoformat()
         
-        # Query for items that should trigger notifications
-        response = notion.databases.query(
+        # First, get recent completed items
+        print("DEBUG: Querying recent completed items...")
+        recent_response = notion.databases.query(
             database_id=DEV_RELEASES_DB,
             filter={
-                "or": [
-                    # Recent completed items
+                "and": [
                     {
-                        "and": [
-                            {
-                                "property": "Status",
-                                "status": {
-                                    "equals": "Completed"
-                                }
-                            },
-                            {
-                                "property": "Date",
-                                "date": {
-                                    "after": one_week_ago
-                                }
-                            }
-                        ]
+                        "property": "Status",
+                        "status": {
+                            "equals": "Completed"
+                        }
                     },
-                    # Upcoming items
                     {
-                        "and": [
-                            {
-                                "or": [
-                                    {
-                                        "property": "Status",
-                                        "status": {
-                                            "equals": "Upcoming"
-                                        }
-                                    },
-                                    {
-                                        "property": "Status",
-                                        "status": {
-                                            "equals": "In Progress"
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "property": "Date",
-                                "date": {
-                                    "after": today
-                                }
-                            },
-                            {
-                                "property": "Date",
-                                "date": {
-                                    "before": two_weeks_later
-                                }
-                            }
-                        ]
+                        "property": "Date",
+                        "date": {
+                            "after": one_week_ago
+                        }
                     }
                 ]
             }
         )
         
+        # Then, get upcoming items
+        print("DEBUG: Querying upcoming items...")
+        upcoming_response = notion.databases.query(
+            database_id=DEV_RELEASES_DB,
+            filter={
+                "and": [
+                    {
+                        "or": [
+                            {
+                                "property": "Status",
+                                "status": {
+                                    "equals": "Upcoming"
+                                }
+                            },
+                            {
+                                "property": "Status",
+                                "status": {
+                                    "equals": "In Progress"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "property": "Date",
+                        "date": {
+                            "after": today,
+                            "before": two_weeks_later
+                        }
+                    }
+                ]
+            }
+        )
+        
+        # Combine results
+        all_items = recent_response['results'] + upcoming_response['results']
+        
         to_recipients = set()  # Use set to avoid duplicates
         cc_recipients = set()
         
-        print(f"DEBUG: Found {len(response['results'])} items that match date/status criteria")
+        print(f"DEBUG: Found {len(all_items)} items that match date/status criteria")
         
-        for item in response['results']:
+        for item in all_items:
             properties = item['properties']
             print(f"DEBUG: Processing item: {item.get('id', 'unknown')}")
             
@@ -121,10 +120,11 @@ def get_recipients_from_releases():
                     if email_text.strip():
                         print(f"DEBUG: Raw Email To text: '{email_text}'")
                         # Split by comma and clean up each email
-                        emails = email_text.replace(' ', '').split(',')
+                        emails = [e.strip() for e in email_text.split(',')]
                         for email in emails:
-                            email = email.strip()
                             if email and '@' in email and '.' in email:
+                                # Remove any extra characters that might be present
+                                email = email.replace(' ', '')
                                 to_recipients.add(email)
                                 print(f"DEBUG: Added To recipient: {email}")
                                 
@@ -146,10 +146,11 @@ def get_recipients_from_releases():
                     if email_text.strip():
                         print(f"DEBUG: Raw Email CC text: '{email_text}'")
                         # Split by comma and clean up each email
-                        emails = email_text.replace(' ', '').split(',')
+                        emails = [e.strip() for e in email_text.split(',')]
                         for email in emails:
-                            email = email.strip()
                             if email and '@' in email and '.' in email:
+                                # Remove any extra characters that might be present
+                                email = email.replace(' ', '')
                                 cc_recipients.add(email)
                                 print(f"DEBUG: Added CC recipient: {email}")
                                 
@@ -241,12 +242,7 @@ def get_upcoming_launches():
                     {
                         "property": "Date",
                         "date": {
-                            "after": today
-                        }
-                    },
-                    {
-                        "property": "Date",
-                        "date": {
+                            "after": today,
                             "before": two_weeks_later
                         }
                     }
@@ -351,7 +347,7 @@ def extract_task_data(page):
     # Extract the title - get it directly from the page object
     title = "Untitled"
     
-    # Method 1: Get from page object title (this is where Notion stores the page title)
+    # Method 1: Get from page object title (the one with type 'title')
     if 'properties' in page:
         # Look for the title property (the one with type 'title')
         for prop_name, prop_data in properties.items():
@@ -576,8 +572,10 @@ def send_email(content):
     # Set To and CC recipients
     if recipients:
         msg['To'] = ', '.join(recipients)
+        print(f"DEBUG: Setting To header: {', '.join(recipients)}")
     if cc_recipients:
         msg['CC'] = ', '.join(cc_recipients)
+        print(f"DEBUG: Setting CC header: {', '.join(cc_recipients)}")
     
     html_part = MIMEText(content, 'html')
     msg.attach(html_part)
@@ -585,9 +583,11 @@ def send_email(content):
     # Combine all recipients for actual sending
     all_recipients = []
     if recipients:
-        all_recipients.extend([email.strip() for email in recipients])
+        all_recipients.extend([email.strip() for email in recipients if email.strip()])
     if cc_recipients:
-        all_recipients.extend([email.strip() for email in cc_recipients])
+        all_recipients.extend([email.strip() for email in cc_recipients if email.strip()])
+    
+    print(f"DEBUG: All recipients for sending: {all_recipients}")
     
     try:
         # Gmail SMTP configuration (adjust for other providers)
@@ -597,7 +597,8 @@ def send_email(content):
         
         # Send to all recipients (both To and CC)
         if all_recipients:
-            server.send_message(msg, to_addrs=all_recipients)
+            text = msg.as_string()
+            server.sendmail(EMAIL_USER, all_recipients, text)
         
         server.quit()
         print(f"Email sent successfully!")
