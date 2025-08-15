@@ -20,10 +20,6 @@ DEVELOPMENT_TASKS_DB = os.getenv('DEVELOPMENT_TASKS_DB')  # For bug fixes
 FALLBACK_RECIPIENTS = [email.strip() for email in os.getenv('RECIPIENTS', '').split(',') if email.strip()] if os.getenv('RECIPIENTS') else []
 FALLBACK_CC_RECIPIENTS = [email.strip() for email in os.getenv('CC_RECIPIENTS', '').split(',') if email.strip()] if os.getenv('CC_RECIPIENTS') else []
 
-# Database IDs
-DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
-DEVELOPMENT_TASKS_DB = os.getenv('DEVELOPMENT_TASKS_DB')  # For bug fixes
-
 # Initialize Notion client
 notion = Client(auth=NOTION_TOKEN)
 
@@ -161,6 +157,8 @@ def get_recipients_from_releases():
         print(f"Error fetching recipients from Dev Releases: {e}")
         print("Falling back to GitHub secrets")
         return FALLBACK_RECIPIENTS, FALLBACK_CC_RECIPIENTS
+
+def get_recent_launches():
     """Get completed launches from the past week"""
     one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
     
@@ -337,28 +335,40 @@ def extract_task_data(page):
         for prop_name, prop_data in properties.items():
             if prop_data.get('type') == 'title':
                 if prop_data.get('title') and len(prop_data['title']) > 0:
-                    title = prop_data['title'][0]['text']['content']
+                    try:
+                        title = prop_data['title'][0]['text']['content']
+                    except (KeyError, IndexError, TypeError):
+                        title = f"Task {page['id'][-8:]}"
                     break
     
-    # Method 2: Fallback to page title if properties don't work
-    if title == "Untitled" and 'url' in page:
-        # If we can't get title from properties, we'll use the page ID as reference
+    # Method 2: Fallback to page ID if properties don't work
+    if title == "Untitled":
         title = f"Task {page['id'][-8:]}"  # Use last 8 chars of ID
     
     # Extract Description
     description = ""
-    if 'Description' in properties and properties['Description']['rich_text']:
-        description = properties['Description']['rich_text'][0]['text']['content']
+    if 'Description' in properties and properties['Description'].get('rich_text'):
+        try:
+            if len(properties['Description']['rich_text']) > 0:
+                description = properties['Description']['rich_text'][0]['text']['content']
+        except (KeyError, IndexError, TypeError):
+            description = ""
     
     # Extract Done Date
     date = ""
-    if 'Done Date' in properties and properties['Done Date']['date']:
-        date = properties['Done Date']['date']['start']
+    if 'Done Date' in properties and properties['Done Date'].get('date'):
+        try:
+            date = properties['Done Date']['date']['start']
+        except (KeyError, TypeError):
+            date = ""
     
     # Extract Priority
     priority = ""
-    if 'Priority' in properties and properties['Priority']['select']:
-        priority = properties['Priority']['select']['name']
+    if 'Priority' in properties and properties['Priority'].get('select'):
+        try:
+            priority = properties['Priority']['select']['name']
+        except (KeyError, TypeError):
+            priority = ""
     
     print(f"DEBUG: Extracted task data - Title: {title}, Date: {date}, Priority: {priority}")
     
@@ -393,7 +403,12 @@ def load_signature():
     except Exception as e:
         print(f"Error loading signature: {e}")
         return EMAIL_SIGNATURE.replace('\\n', '<br>') if EMAIL_SIGNATURE else ""
+
+def format_email_content(recent_launches, upcoming_launches, bug_fixes):
     """Format data into HTML email"""
+    
+    # Load signature
+    signature_content = load_signature()
     
     html_content = f"""
     <html>
@@ -523,27 +538,34 @@ def load_signature():
     
     return html_content
 
-def get_recent_launches():
+def send_email(content):
     """Send the formatted email"""
+    # Get recipients from Dev Releases database
+    recipients, cc_recipients = get_recipients_from_releases()
+    
+    if not recipients and not cc_recipients:
+        print("No recipients configured!")
+        return
+    
     msg = MIMEMultipart('alternative')
     msg['Subject'] = f"Weekly Development Release Notes - {datetime.now().strftime('%B %d, %Y')}"
     msg['From'] = EMAIL_USER
     
     # Set To and CC recipients
-    if RECIPIENTS:
-        msg['To'] = ', '.join(RECIPIENTS)
-    if CC_RECIPIENTS:
-        msg['CC'] = ', '.join(CC_RECIPIENTS)
+    if recipients:
+        msg['To'] = ', '.join(recipients)
+    if cc_recipients:
+        msg['CC'] = ', '.join(cc_recipients)
     
     html_part = MIMEText(content, 'html')
     msg.attach(html_part)
     
     # Combine all recipients for actual sending
     all_recipients = []
-    if RECIPIENTS:
-        all_recipients.extend([email.strip() for email in RECIPIENTS])
-    if CC_RECIPIENTS:
-        all_recipients.extend([email.strip() for email in CC_RECIPIENTS])
+    if recipients:
+        all_recipients.extend([email.strip() for email in recipients])
+    if cc_recipients:
+        all_recipients.extend([email.strip() for email in cc_recipients])
     
     try:
         # Gmail SMTP configuration (adjust for other providers)
@@ -557,8 +579,8 @@ def get_recent_launches():
         
         server.quit()
         print(f"Email sent successfully!")
-        print(f"To: {', '.join(RECIPIENTS) if RECIPIENTS else 'None'}")
-        print(f"CC: {', '.join(CC_RECIPIENTS) if CC_RECIPIENTS else 'None'}")
+        print(f"To: {', '.join(recipients) if recipients else 'None'}")
+        print(f"CC: {', '.join(cc_recipients) if cc_recipients else 'None'}")
         print(f"Total recipients: {len(all_recipients)}")
         
     except Exception as e:
