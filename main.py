@@ -10,8 +10,16 @@ import json
 NOTION_TOKEN = os.getenv('NOTION_TOKEN')
 EMAIL_USER = os.getenv('EMAIL_USER')
 EMAIL_PASS = os.getenv('EMAIL_PASS')
-RECIPIENTS = os.getenv('RECIPIENTS').split(',') if os.getenv('RECIPIENTS') else []  # To: recipients
-CC_RECIPIENTS = os.getenv('CC_RECIPIENTS').split(',') if os.getenv('CC_RECIPIENTS') else []  # CC: recipients
+EMAIL_SIGNATURE = os.getenv('EMAIL_SIGNATURE', '')  # Optional email signature
+
+# Database IDs
+DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
+DEVELOPMENT_TASKS_DB = os.getenv('DEVELOPMENT_TASKS_DB')  # For bug fixes
+RECIPIENTS_DB = os.getenv('RECIPIENTS_DB', '')  # For email recipients (optional)
+
+# Fallback recipients if no Notion database
+FALLBACK_RECIPIENTS = os.getenv('RECIPIENTS', '').split(',') if os.getenv('RECIPIENTS') else []
+FALLBACK_CC_RECIPIENTS = os.getenv('CC_RECIPIENTS', '').split(',') if os.getenv('CC_RECIPIENTS') else []
 
 # Database IDs
 DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
@@ -20,7 +28,114 @@ DEVELOPMENT_TASKS_DB = os.getenv('DEVELOPMENT_TASKS_DB')  # For bug fixes
 # Initialize Notion client
 notion = Client(auth=NOTION_TOKEN)
 
-def get_recent_launches():
+def get_recipients_from_releases():
+    """Get email recipients from Dev Releases database based on recent/upcoming items"""
+    try:
+        # Get recent launches (completed in last 7 days)
+        one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+        today = datetime.now().isoformat()
+        two_weeks_later = (datetime.now() + timedelta(days=14)).isoformat()
+        
+        # Query for items that should trigger notifications
+        response = notion.databases.query(
+            database_id=DEV_RELEASES_DB,
+            filter={
+                "or": [
+                    # Recent completed items
+                    {
+                        "and": [
+                            {
+                                "property": "Status",
+                                "status": {
+                                    "equals": "Completed"
+                                }
+                            },
+                            {
+                                "property": "Date",
+                                "date": {
+                                    "after": one_week_ago
+                                }
+                            }
+                        ]
+                    },
+                    # Upcoming items
+                    {
+                        "and": [
+                            {
+                                "or": [
+                                    {
+                                        "property": "Status",
+                                        "status": {
+                                            "equals": "Upcoming"
+                                        }
+                                    },
+                                    {
+                                        "property": "Status",
+                                        "status": {
+                                            "equals": "In Progress"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "property": "Date",
+                                "date": {
+                                    "after": today
+                                }
+                            },
+                            {
+                                "property": "Date",
+                                "date": {
+                                    "before": two_weeks_later
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+        
+        to_recipients = set()  # Use set to avoid duplicates
+        cc_recipients = set()
+        
+        for item in response['results']:
+            properties = item['properties']
+            
+            # Extract To recipients
+            if 'Email To' in properties and properties['Email To'].get('rich_text'):
+                for email_item in properties['Email To']['rich_text']:
+                    emails = email_item['text']['content'].split(',')
+                    for email in emails:
+                        email = email.strip()
+                        if email and '@' in email:
+                            to_recipients.add(email)
+            
+            # Extract CC recipients  
+            if 'Email CC' in properties and properties['Email CC'].get('rich_text'):
+                for email_item in properties['Email CC']['rich_text']:
+                    emails = email_item['text']['content'].split(',')
+                    for email in emails:
+                        email = email.strip()
+                        if email and '@' in email:
+                            cc_recipients.add(email)
+        
+        # Convert sets back to lists
+        to_list = list(to_recipients)
+        cc_list = list(cc_recipients)
+        
+        print(f"Recipients from Dev Releases - To: {len(to_list)}, CC: {len(cc_list)}")
+        
+        # If no recipients found in database, use fallback
+        if not to_list and not cc_list:
+            print("No recipients found in Dev Releases, using fallback")
+            return FALLBACK_RECIPIENTS, FALLBACK_CC_RECIPIENTS
+            
+        return to_list, cc_list
+        
+    except Exception as e:
+        print(f"Error fetching recipients from Dev Releases: {e}")
+        print("Falling back to GitHub secrets")
+        return FALLBACK_RECIPIENTS, FALLBACK_CC_RECIPIENTS
     """Get completed launches from the past week"""
     one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
     
@@ -229,7 +344,30 @@ def extract_task_data(page):
         'priority': priority
     }
 
-def format_email_content(recent_launches, upcoming_launches, bug_fixes):
+def load_signature():
+    """Load email signature from file if it exists"""
+    try:
+        # Try to read signature file from the repository
+        signature_files = ['signature.html', 'signature.txt', 'email-signature.html']
+        
+        for filename in signature_files:
+            try:
+                with open(filename, 'r', encoding='utf-8') as file:
+                    signature_content = file.read().strip()
+                    if signature_content:
+                        print(f"Loaded signature from {filename}")
+                        return signature_content
+            except FileNotFoundError:
+                continue
+        
+        # Fallback to environment variable
+        if EMAIL_SIGNATURE:
+            return EMAIL_SIGNATURE.replace('\\n', '<br>')
+        
+        return ""
+    except Exception as e:
+        print(f"Error loading signature: {e}")
+        return EMAIL_SIGNATURE.replace('\\n', '<br>') if EMAIL_SIGNATURE else ""
     """Format data into HTML email"""
     
     html_content = f"""
@@ -340,16 +478,27 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center;">
             <p style="color: #6c757d; font-size: 14px; margin: 0;">
                 📊 This weekly update was automatically generated from our Notion workspace.<br>
-                For questions or additional details, please reach out to the technical project manager or development team.
+                For questions or additional details, please reach out to the development team.
             </p>
-        </div>
+        </div>"""
+    
+    # Add signature if provided
+    if signature_content:
+        html_content += f"""
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e9ecef;">
+            <div style="font-family: Arial, sans-serif; color: #495057;">
+                {signature_content}
+            </div>
+        </div>"""
+    
+    html_content += """
     </body>
     </html>
     """
     
     return html_content
 
-def send_email(content):
+def get_recent_launches():
     """Send the formatted email"""
     msg = MIMEMultipart('alternative')
     msg['Subject'] = f"Weekly Development Release Notes - {datetime.now().strftime('%B %d, %Y')}"
