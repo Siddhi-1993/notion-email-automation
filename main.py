@@ -93,8 +93,22 @@ def get_recipients_from_releases():
         to_recipients = set()  # Use set to avoid duplicates
         cc_recipients = set()
         
+        print(f"DEBUG: Found {len(response['results'])} items that match date/status criteria")
+        
         for item in response['results']:
             properties = item['properties']
+            print(f"DEBUG: Processing item: {item.get('id', 'unknown')}")
+            
+            # Debug: Print all properties to see structure
+            if 'Email To' in properties:
+                print(f"DEBUG: Email To property exists: {properties['Email To']}")
+            else:
+                print("DEBUG: No 'Email To' property found")
+                
+            if 'Email CC' in properties:
+                print(f"DEBUG: Email CC property exists: {properties['Email CC']}")
+            else:
+                print("DEBUG: No 'Email CC' property found")
             
             # Extract To recipients
             if 'Email To' in properties:
@@ -105,17 +119,21 @@ def get_recipients_from_releases():
                         email_text += text_item['text']['content']
                     
                     if email_text.strip():
-                        emails = email_text.split(',')
+                        print(f"DEBUG: Raw Email To text: '{email_text}'")
+                        # Split by comma and clean up each email
+                        emails = email_text.replace(' ', '').split(',')
                         for email in emails:
                             email = email.strip()
-                            if email and '@' in email:
+                            if email and '@' in email and '.' in email:
                                 to_recipients.add(email)
+                                print(f"DEBUG: Added To recipient: {email}")
                                 
                 elif properties['Email To'].get('email'):
                     # Handle email property format
                     email = properties['Email To']['email'].strip()
                     if email and '@' in email:
                         to_recipients.add(email)
+                        print(f"DEBUG: Added To recipient (email property): {email}")
             
             # Extract CC recipients  
             if 'Email CC' in properties:
@@ -126,17 +144,21 @@ def get_recipients_from_releases():
                         email_text += text_item['text']['content']
                     
                     if email_text.strip():
-                        emails = email_text.split(',')
+                        print(f"DEBUG: Raw Email CC text: '{email_text}'")
+                        # Split by comma and clean up each email
+                        emails = email_text.replace(' ', '').split(',')
                         for email in emails:
                             email = email.strip()
-                            if email and '@' in email:
+                            if email and '@' in email and '.' in email:
                                 cc_recipients.add(email)
+                                print(f"DEBUG: Added CC recipient: {email}")
                                 
                 elif properties['Email CC'].get('email'):
                     # Handle email property format
                     email = properties['Email CC']['email'].strip()
                     if email and '@' in email:
                         cc_recipients.add(email)
+                        print(f"DEBUG: Added CC recipient (email property): {email}")
         
         # Convert sets back to lists
         to_list = list(to_recipients)
