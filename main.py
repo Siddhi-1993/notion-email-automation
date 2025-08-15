@@ -15,11 +15,10 @@ EMAIL_SIGNATURE = os.getenv('EMAIL_SIGNATURE', '')  # Optional email signature
 # Database IDs
 DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
 DEVELOPMENT_TASKS_DB = os.getenv('DEVELOPMENT_TASKS_DB')  # For bug fixes
-RECIPIENTS_DB = os.getenv('RECIPIENTS_DB', '')  # For email recipients (optional)
 
-# Fallback recipients if no Notion database
-FALLBACK_RECIPIENTS = os.getenv('RECIPIENTS', '').split(',') if os.getenv('RECIPIENTS') else []
-FALLBACK_CC_RECIPIENTS = os.getenv('CC_RECIPIENTS', '').split(',') if os.getenv('CC_RECIPIENTS') else []
+# Fallback recipients if no recipients found in Dev Releases database
+FALLBACK_RECIPIENTS = [email.strip() for email in os.getenv('RECIPIENTS', '').split(',') if email.strip()] if os.getenv('RECIPIENTS') else []
+FALLBACK_CC_RECIPIENTS = [email.strip() for email in os.getenv('CC_RECIPIENTS', '').split(',') if email.strip()] if os.getenv('CC_RECIPIENTS') else []
 
 # Database IDs
 DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
@@ -102,28 +101,54 @@ def get_recipients_from_releases():
             properties = item['properties']
             
             # Extract To recipients
-            if 'Email To' in properties and properties['Email To'].get('rich_text'):
-                for email_item in properties['Email To']['rich_text']:
-                    emails = email_item['text']['content'].split(',')
-                    for email in emails:
-                        email = email.strip()
-                        if email and '@' in email:
-                            to_recipients.add(email)
+            if 'Email To' in properties:
+                if properties['Email To'].get('rich_text'):
+                    # Handle rich text format
+                    email_text = ""
+                    for text_item in properties['Email To']['rich_text']:
+                        email_text += text_item['text']['content']
+                    
+                    if email_text.strip():
+                        emails = email_text.split(',')
+                        for email in emails:
+                            email = email.strip()
+                            if email and '@' in email:
+                                to_recipients.add(email)
+                                
+                elif properties['Email To'].get('email'):
+                    # Handle email property format
+                    email = properties['Email To']['email'].strip()
+                    if email and '@' in email:
+                        to_recipients.add(email)
             
             # Extract CC recipients  
-            if 'Email CC' in properties and properties['Email CC'].get('rich_text'):
-                for email_item in properties['Email CC']['rich_text']:
-                    emails = email_item['text']['content'].split(',')
-                    for email in emails:
-                        email = email.strip()
-                        if email and '@' in email:
-                            cc_recipients.add(email)
+            if 'Email CC' in properties:
+                if properties['Email CC'].get('rich_text'):
+                    # Handle rich text format
+                    email_text = ""
+                    for text_item in properties['Email CC']['rich_text']:
+                        email_text += text_item['text']['content']
+                    
+                    if email_text.strip():
+                        emails = email_text.split(',')
+                        for email in emails:
+                            email = email.strip()
+                            if email and '@' in email:
+                                cc_recipients.add(email)
+                                
+                elif properties['Email CC'].get('email'):
+                    # Handle email property format
+                    email = properties['Email CC']['email'].strip()
+                    if email and '@' in email:
+                        cc_recipients.add(email)
         
         # Convert sets back to lists
         to_list = list(to_recipients)
         cc_list = list(cc_recipients)
         
         print(f"Recipients from Dev Releases - To: {len(to_list)}, CC: {len(cc_list)}")
+        print(f"To recipients: {to_list}")
+        print(f"CC recipients: {cc_list}")
         
         # If no recipients found in database, use fallback
         if not to_list and not cc_list:
