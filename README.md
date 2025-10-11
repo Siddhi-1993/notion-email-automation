@@ -1,2 +1,2 @@
 # notion-email-automation
-Automated weekly email reports from Notion databases
+Weekly automated email reports generated from Notion databases
