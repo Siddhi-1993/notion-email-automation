@@ -425,6 +425,27 @@ def load_signature():
 def format_email_content(recent_launches, upcoming_launches, bug_fixes):
     """Format data into HTML email"""
     
+    # Sort items by date
+    # Recent launches: sort by date descending (most recent first)
+    recent_launches = sorted(
+        recent_launches,
+        key=lambda x: x['properties'].get('Date', {}).get('date', {}).get('start', ''),
+        reverse=True
+    )
+    
+    # Upcoming launches: sort by date ascending (soonest first)
+    upcoming_launches = sorted(
+        upcoming_launches,
+        key=lambda x: x['properties'].get('Date', {}).get('date', {}).get('start', '')
+    )
+    
+    # Bug fixes: sort by done date descending (most recent first)
+    bug_fixes = sorted(
+        bug_fixes,
+        key=lambda x: x['properties'].get('Done Date', {}).get('date', {}).get('start', ''),
+        reverse=True
+    )
+    
     # Load signature
     signature_content = load_signature()
     
