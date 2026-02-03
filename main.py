@@ -16,170 +16,8 @@ EMAIL_SIGNATURE = os.getenv('EMAIL_SIGNATURE', '')  # Optional email signature
 DEV_RELEASES_DB = os.getenv('DEV_RELEASES_DB')  # For launches
 DEVELOPMENT_TASKS_DB = os.getenv('DEVELOPMENT_TASKS_DB')  # For bug fixes
 
-# Fallback recipients if no recipients found in Dev Releases database
-FALLBACK_RECIPIENTS = [email.strip() for email in os.getenv('RECIPIENTS', '').split(',') if email.strip()] if os.getenv('RECIPIENTS') else []
-FALLBACK_CC_RECIPIENTS = [email.strip() for email in os.getenv('CC_RECIPIENTS', '').split(',') if email.strip()] if os.getenv('CC_RECIPIENTS') else []
-
 # Initialize Notion client
 notion = Client(auth=NOTION_TOKEN)
-
-def get_recipients_from_releases():
-    """Get email recipients from Dev Releases database based on recent/upcoming items"""
-    try:
-        # Get recent launches (completed in last 7 days)
-        one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-        today = datetime.now().isoformat()
-        two_weeks_later = (datetime.now() + timedelta(days=14)).isoformat()
-        
-        # First, get recent completed items
-        print("DEBUG: Querying recent completed items...")
-        recent_response = notion.databases.query(
-            database_id=DEV_RELEASES_DB,
-            filter={
-                "and": [
-                    {
-                        "property": "Status",
-                        "status": {
-                            "equals": "Completed"
-                        }
-                    },
-                    {
-                        "property": "Date",
-                        "date": {
-                            "after": one_week_ago
-                        }
-                    }
-                ]
-            }
-        )
-        
-        # Then, get upcoming items
-        print("DEBUG: Querying upcoming items...")
-        upcoming_response = notion.databases.query(
-            database_id=DEV_RELEASES_DB,
-            filter={
-                "and": [
-                    {
-                        "or": [
-                            {
-                                "property": "Status",
-                                "status": {
-                                    "equals": "Upcoming"
-                                }
-                            },
-                            {
-                                "property": "Status",
-                                "status": {
-                                    "equals": "In Progress"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "property": "Date",
-                        "date": {
-                            "after": today,
-                            "before": two_weeks_later
-                        }
-                    }
-                ]
-            }
-        )
-        
-        # Combine results
-        all_items = recent_response['results'] + upcoming_response['results']
-        
-        to_recipients = set()  # Use set to avoid duplicates
-        cc_recipients = set()
-        
-        print(f"DEBUG: Found {len(all_items)} items that match date/status criteria")
-        
-        for item in all_items:
-            properties = item['properties']
-            print(f"DEBUG: Processing item: {item.get('id', 'unknown')}")
-            
-            # Debug: Print all properties to see structure
-            if 'Email To' in properties:
-                print(f"DEBUG: Email To property exists: {properties['Email To']}")
-            else:
-                print("DEBUG: No 'Email To' property found")
-                
-            if 'Email CC' in properties:
-                print(f"DEBUG: Email CC property exists: {properties['Email CC']}")
-            else:
-                print("DEBUG: No 'Email CC' property found")
-            
-            # Extract To recipients
-            if 'Email To' in properties:
-                if properties['Email To'].get('rich_text'):
-                    # Handle rich text format
-                    email_text = ""
-                    for text_item in properties['Email To']['rich_text']:
-                        email_text += text_item['text']['content']
-                    
-                    if email_text.strip():
-                        print(f"DEBUG: Raw Email To text: '{email_text}'")
-                        # Split by comma and clean up each email
-                        emails = [e.strip() for e in email_text.split(',')]
-                        for email in emails:
-                            if email and '@' in email and '.' in email:
-                                # Remove any extra characters that might be present
-                                email = email.replace(' ', '')
-                                to_recipients.add(email)
-                                print(f"DEBUG: Added To recipient: {email}")
-                                
-                elif properties['Email To'].get('email'):
-                    # Handle email property format
-                    email = properties['Email To']['email'].strip()
-                    if email and '@' in email:
-                        to_recipients.add(email)
-                        print(f"DEBUG: Added To recipient (email property): {email}")
-            
-            # Extract CC recipients  
-            if 'Email CC' in properties:
-                if properties['Email CC'].get('rich_text'):
-                    # Handle rich text format
-                    email_text = ""
-                    for text_item in properties['Email CC']['rich_text']:
-                        email_text += text_item['text']['content']
-                    
-                    if email_text.strip():
-                        print(f"DEBUG: Raw Email CC text: '{email_text}'")
-                        # Split by comma and clean up each email
-                        emails = [e.strip() for e in email_text.split(',')]
-                        for email in emails:
-                            if email and '@' in email and '.' in email:
-                                # Remove any extra characters that might be present
-                                email = email.replace(' ', '')
-                                cc_recipients.add(email)
-                                print(f"DEBUG: Added CC recipient: {email}")
-                                
-                elif properties['Email CC'].get('email'):
-                    # Handle email property format
-                    email = properties['Email CC']['email'].strip()
-                    if email and '@' in email:
-                        cc_recipients.add(email)
-                        print(f"DEBUG: Added CC recipient (email property): {email}")
-        
-        # Convert sets back to lists
-        to_list = list(to_recipients)
-        cc_list = list(cc_recipients)
-        
-        print(f"Recipients from Dev Releases - To: {len(to_list)}, CC: {len(cc_list)}")
-        print(f"To recipients: {to_list}")
-        print(f"CC recipients: {cc_list}")
-        
-        # If no recipients found in database, use fallback
-        if not to_list and not cc_list:
-            print("No recipients found in Dev Releases, using fallback")
-            return FALLBACK_RECIPIENTS, FALLBACK_CC_RECIPIENTS
-            
-        return to_list, cc_list
-        
-    except Exception as e:
-        print(f"Error fetching recipients from Dev Releases: {e}")
-        print("Falling back to GitHub secrets")
-        return FALLBACK_RECIPIENTS, FALLBACK_CC_RECIPIENTS
 
 def get_recent_launches():
     """Get completed launches from the past week"""
@@ -206,8 +44,6 @@ def get_recent_launches():
             }
         )
         print(f"DEBUG: Recent launches query returned {len(response['results'])} results")
-        if response['results']:
-            print(f"DEBUG: First result: {json.dumps(response['results'][0], indent=2)}")
         return response['results']
     except Exception as e:
         print(f"Error fetching recent launches: {e}")
@@ -286,18 +122,105 @@ def get_bug_fixes():
             }
         )
         print(f"DEBUG: Bug fixes query returned {len(response['results'])} results")
-        if response['results']:
-            print(f"DEBUG: First bug fix result: {json.dumps(response['results'][0], indent=2)}")
         return response['results']
     except Exception as e:
         print(f"Error fetching bug fixes: {e}")
         return []
 
+def get_recipients_for_item(item):
+    """Extract email recipients from a single item"""
+    properties = item['properties']
+    to_recipients = set()
+    cc_recipients = set()
+    
+    # Extract To recipients
+    if 'Email To' in properties:
+        if properties['Email To'].get('rich_text'):
+            email_text = ""
+            for text_item in properties['Email To']['rich_text']:
+                email_text += text_item['text']['content']
+            
+            if email_text.strip():
+                emails = [e.strip() for e in email_text.split(',')]
+                for email in emails:
+                    if email and '@' in email and '.' in email:
+                        email = email.replace(' ', '')
+                        to_recipients.add(email)
+                        
+        elif properties['Email To'].get('email'):
+            email = properties['Email To']['email'].strip()
+            if email and '@' in email:
+                to_recipients.add(email)
+    
+    # Extract CC recipients  
+    if 'Email CC' in properties:
+        if properties['Email CC'].get('rich_text'):
+            email_text = ""
+            for text_item in properties['Email CC']['rich_text']:
+                email_text += text_item['text']['content']
+            
+            if email_text.strip():
+                emails = [e.strip() for e in email_text.split(',')]
+                for email in emails:
+                    if email and '@' in email and '.' in email:
+                        email = email.replace(' ', '')
+                        cc_recipients.add(email)
+                        
+        elif properties['Email CC'].get('email'):
+            email = properties['Email CC']['email'].strip()
+            if email and '@' in email:
+                cc_recipients.add(email)
+    
+    return list(to_recipients), list(cc_recipients)
+
+def group_items_by_recipient(recent_launches, upcoming_launches, bug_fixes):
+    """Group all items by their recipients - launches are personalized, bug fixes go to everyone"""
+    recipient_data = {}  # {email: {'recent': [], 'upcoming': [], 'bugs': [], 'is_cc': bool}}
+    
+    # Process recent launches - personalized to stakeholders
+    for item in recent_launches:
+        to_list, cc_list = get_recipients_for_item(item)
+        
+        for email in to_list:
+            if email not in recipient_data:
+                recipient_data[email] = {'recent': [], 'upcoming': [], 'bugs': [], 'is_cc': False}
+            recipient_data[email]['recent'].append(item)
+        
+        for email in cc_list:
+            if email not in recipient_data:
+                recipient_data[email] = {'recent': [], 'upcoming': [], 'bugs': [], 'is_cc': True}
+            else:
+                recipient_data[email]['is_cc'] = True
+            recipient_data[email]['recent'].append(item)
+    
+    # Process upcoming launches - personalized to stakeholders
+    for item in upcoming_launches:
+        to_list, cc_list = get_recipients_for_item(item)
+        
+        for email in to_list:
+            if email not in recipient_data:
+                recipient_data[email] = {'recent': [], 'upcoming': [], 'bugs': [], 'is_cc': False}
+            recipient_data[email]['upcoming'].append(item)
+        
+        for email in cc_list:
+            if email not in recipient_data:
+                recipient_data[email] = {'recent': [], 'upcoming': [], 'bugs': [], 'is_cc': True}
+            else:
+                recipient_data[email]['is_cc'] = True
+            recipient_data[email]['upcoming'].append(item)
+    
+    # Bug fixes - send ALL bug fixes to ALL stakeholders who have any launches
+    # This ensures everyone gets the same bug fix information
+    for email in recipient_data.keys():
+        recipient_data[email]['bugs'] = bug_fixes  # All bug fixes to everyone
+    
+    return recipient_data
+
 def extract_release_data(page):
     """Extract data from a Dev Releases page"""
     properties = page['properties']
     
-    # Extract Event Name (title) - this is actually a property in Dev Releases
+    # Extract Event Name (title)
     title = "Untitled"
     if 'Event Name' in properties and properties['Event Name'].get('title'):
         try:
@@ -331,8 +254,6 @@ def extract_release_data(page):
         except (KeyError, TypeError):
             status = ""
     
-    print(f"DEBUG: Extracted release data - Title: {title}, Date: {date}, Status: {status}")
-    
     return {
         'title': title,
         'description': description,
@@ -344,24 +265,22 @@ def extract_task_data(page):
     """Extract data from a Development Tasks page"""
     properties = page['properties']
     
-    # Extract the title - get it directly from the page object
+    # Extract the title
     title = "Untitled"
     
-    # Method 1: Get from page object title (the one with type 'title')
-    if 'properties' in page:
-        # Look for the title property (the one with type 'title')
-        for prop_name, prop_data in properties.items():
-            if prop_data.get('type') == 'title':
-                if prop_data.get('title') and len(prop_data['title']) > 0:
-                    try:
-                        title = prop_data['title'][0]['text']['content']
-                    except (KeyError, IndexError, TypeError):
-                        title = f"Task {page['id'][-8:]}"
-                    break
+    # Look for the title property (the one with type 'title')
+    for prop_name, prop_data in properties.items():
+        if prop_data.get('type') == 'title':
+            if prop_data.get('title') and len(prop_data['title']) > 0:
+                try:
+                    title = prop_data['title'][0]['text']['content']
+                except (KeyError, IndexError, TypeError):
+                    title = f"Task {page['id'][-8:]}"
+                break
     
-    # Method 2: Fallback to page ID if properties don't work
+    # Fallback to page ID if properties don't work
     if title == "Untitled":
-        title = f"Task {page['id'][-8:]}"  # Use last 8 chars of ID
+        title = f"Task {page['id'][-8:]}"
     
     # Extract Description
     description = ""
@@ -387,8 +306,6 @@ def extract_task_data(page):
             priority = properties['Priority']['select']['name']
         except (KeyError, TypeError):
             priority = ""
-    
-    print(f"DEBUG: Extracted task data - Title: {title}, Date: {date}, Priority: {priority}")
     
     return {
         'title': title,
@@ -426,20 +343,17 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
     """Format data into HTML email"""
     
     # Sort items by date
-    # Recent launches: sort by date descending (most recent first)
     recent_launches = sorted(
         recent_launches,
         key=lambda x: x['properties'].get('Date', {}).get('date', {}).get('start', ''),
         reverse=True
     )
     
-    # Upcoming launches: sort by date ascending (soonest first)
     upcoming_launches = sorted(
         upcoming_launches,
         key=lambda x: x['properties'].get('Date', {}).get('date', {}).get('start', '')
     )
     
-    # Bug fixes: sort by done date descending (most recent first)
     bug_fixes = sorted(
         bug_fixes,
         key=lambda x: x['properties'].get('Done Date', {}).get('date', {}).get('start', ''),
@@ -577,58 +491,29 @@ def format_email_content(recent_launches, upcoming_launches, bug_fixes):
     
     return html_content
 
-def send_email(content):
-    """Send the formatted email"""
-    # Get recipients from Dev Releases database
-    recipients, cc_recipients = get_recipients_from_releases()
-    
-    if not recipients and not cc_recipients:
-        print("No recipients configured!")
-        return
-    
+def send_personalized_email(recipient_email, content, is_cc=False):
+    """Send a personalized email to a single recipient"""
     msg = MIMEMultipart('alternative')
     msg['Subject'] = f"Weekly Development Release Notes - {datetime.now().strftime('%B %d, %Y')}"
     msg['From'] = EMAIL_USER
-    
-    # Set To and CC recipients
-    if recipients:
-        msg['To'] = ', '.join(recipients)
-        print(f"DEBUG: Setting To header: {', '.join(recipients)}")
-    if cc_recipients:
-        msg['CC'] = ', '.join(cc_recipients)
-        print(f"DEBUG: Setting CC header: {', '.join(cc_recipients)}")
+    msg['To'] = recipient_email
     
     html_part = MIMEText(content, 'html')
     msg.attach(html_part)
     
-    # Combine all recipients for actual sending
-    all_recipients = []
-    if recipients:
-        all_recipients.extend([email.strip() for email in recipients if email.strip()])
-    if cc_recipients:
-        all_recipients.extend([email.strip() for email in cc_recipients if email.strip()])
-    
-    print(f"DEBUG: All recipients for sending: {all_recipients}")
-    
     try:
-        # Gmail SMTP configuration (adjust for other providers)
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
         
-        # Send to all recipients (both To and CC)
-        if all_recipients:
-            text = msg.as_string()
-            server.sendmail(EMAIL_USER, all_recipients, text)
+        text = msg.as_string()
+        server.sendmail(EMAIL_USER, [recipient_email], text)
         
         server.quit()
-        print(f"Email sent successfully!")
-        print(f"To: {', '.join(recipients) if recipients else 'None'}")
-        print(f"CC: {', '.join(cc_recipients) if cc_recipients else 'None'}")
-        print(f"Total recipients: {len(all_recipients)}")
+        print(f"Email sent successfully to {recipient_email} (CC: {is_cc})")
         
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print(f"Error sending email to {recipient_email}: {e}")
         raise e
 
 def main():
@@ -650,13 +535,33 @@ def main():
         bug_fixes = get_bug_fixes()
         print(f"Found {len(bug_fixes)} bug fixes")
         
-        print("Formatting email content...")
-        email_content = format_email_content(recent_launches, upcoming_launches, bug_fixes)
+        print("\nGrouping items by recipient...")
+        recipient_data = group_items_by_recipient(recent_launches, upcoming_launches, bug_fixes)
+        print(f"Found {len(recipient_data)} unique recipients")
         
-        print("Sending email...")
-        send_email(email_content)
+        if not recipient_data:
+            print("No recipients found with associated items. Exiting.")
+            return
         
-        print("Weekly email automation completed successfully!")
+        # Send personalized emails to each recipient
+        for recipient_email, data in recipient_data.items():
+            print(f"\nProcessing email for {recipient_email}...")
+            print(f"  - Recent launches: {len(data['recent'])}")
+            print(f"  - Upcoming launches: {len(data['upcoming'])}")
+            print(f"  - Bug fixes: {len(data['bugs'])}")
+            
+            # Format email with only this recipient's items
+            email_content = format_email_content(
+                data['recent'],
+                data['upcoming'],
+                data['bugs']
+            )
+            
+            # Send email
+            send_personalized_email(recipient_email, email_content, data['is_cc'])
+        
+        print(f"\nWeekly email automation completed successfully!")
+        print(f"Total emails sent: {len(recipient_data)}")
         
     except Exception as e:
         print(f"Error in main execution: {e}")
